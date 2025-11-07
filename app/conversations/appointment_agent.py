@@ -1,5 +1,6 @@
 # app/conversations/agent.py
 
+import os
 from dataclasses import dataclass
 from typing import Dict, Optional
 from datetime import date, datetime
@@ -13,17 +14,17 @@ from app.appointments.models import Appointment, AppointmentType
 from app.patient_info.interface import add_patient, get_patient_by_phone
 from app.appointments.interface import (
     book_appointment,
+    cancel_appointment,
     list_appointments_for_patient,
     list_available_slots_for_date,
 )
-from app.conversations.interface import escalate_conversation_to_admin, get_messages
 from app.conversations.models import Conversation, SenderTypeEnum
 
 
 import logfire
 
 # configure logfire
-logfire.configure(token="pylf_v1_us_fTkV82Y6y3RjYSnb9xYvfJYz5NZcWB1R7Pg7T0kl8Lgk")
+logfire.configure(token=os.getenv("LOGFIRE_AUTH_TOKEN"))
 logfire.instrument_pydantic_ai()
 # ─────────────────────────────────────────────
 # Dependencies
@@ -76,6 +77,7 @@ dental_agent = Agent(
         "5. Once the user details are there ask the user what kind of appointment does he want to book and provide possible appointment slots using "
         "5. Then help them **book an appointment** (Cleaning, General Checkup, Emergency) using `set_appointment`.\n"
         "6. If they seem frustrated or say things like 'I want to talk to a person', immediately use `escalate_to_human`.\n\n"
+        "7. Help cancel existing appointments using cancel_patient_appointment.\n\n"
         "Always keep your messages kind, concise, and conversational."
     ),
 )
@@ -128,6 +130,36 @@ async def register_patient(
     )
     ctx.deps.patient = new_patient
     return f"New patient {full_name} registered successfully."
+
+
+@dental_agent.tool
+async def cancel_patient_appointment(
+    ctx: RunContext[DentalDependencies],
+    appointment_id: int,
+) -> str:
+    """
+    Cancel an existing appointment.
+
+    Args:
+        appointment_id: The ID of the appointment to cancel.
+
+    Returns:
+        Confirmation message for the user.
+    """
+    db = ctx.deps.db
+    active_conversation = await db.get(Conversation, ctx.deps.conversation_id)
+    active_patient = await db.get(Patient, active_conversation.patient_id)
+
+    if not active_patient:
+        return "Please provide your phone number first so I can identify you."
+
+    success = await cancel_appointment(appointment_id=appointment_id, db=db)
+    if success:
+        return (
+            f"Your appointment (ID: {appointment_id}) has been successfully cancelled."
+        )
+    else:
+        return f"Sorry, I could not find an appointment with ID {appointment_id}."
 
 
 @dental_agent.tool
@@ -203,6 +235,8 @@ async def escalate_to_human(
     if not ctx.deps.conversation_id:
         return "Could not find conversation ID for escalation."
 
+    from app.conversations.interface import escalate_conversation_to_admin
+
     await escalate_conversation_to_admin(conversation_id=ctx.deps.conversation_id)
     return "I've escalated this chat to one of our human staff — they’ll be with you shortly."
 
@@ -244,7 +278,9 @@ async def existing_appointment(ctx: RunContext[DentalDependencies]) -> str:
     appointment_summaries = []
     for appt in upcoming:
         formatted_time = appt.start_time.strftime("%A, %b %d at %I:%M %p")
-        appointment_summaries.append(f"- {appt.appointment_type} on {formatted_time}")
+        appointment_summaries.append(
+            f"-{appt.id}: {appt.appointment_type} on {formatted_time}"
+        )
 
     summary_text = "\n".join(appointment_summaries)
     return f"Patient {active_patient.full_name} has the following upcoming appointments:\n{summary_text}"
@@ -263,6 +299,8 @@ async def enrich_context(ctx: RunContext[DentalDependencies]) -> str:
 
 @dental_agent.instructions
 async def conversation_history(ctx: RunContext[str]) -> str:
+    from app.conversations.interface import get_messages
+
     chat_message = await get_messages(conversation_id=ctx.deps.conversation_id)
 
     if len(chat_message) > 0:
@@ -287,5 +325,4 @@ async def handle_user_message(conversation_id, message):
     async for db in get_db():
         deps = DentalDependencies(db=db, conversation_id=conversation_id)
         result = await dental_agent.run(message, deps=deps)
-        print("============ agent result ============ ", result)
         return result.output.message

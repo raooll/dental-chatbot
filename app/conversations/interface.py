@@ -4,7 +4,13 @@ from datetime import datetime
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.future import select
 
-from app.conversations.models import Conversation, Message, ConversationStatusEnum
+from app.conversations import appointment_agent
+from app.conversations.models import (
+    Conversation,
+    Message,
+    ConversationStatusEnum,
+    SenderTypeEnum,
+)
 from app.db.utils import with_db
 # ----------------------------
 # Conversation CRUD
@@ -12,15 +18,11 @@ from app.db.utils import with_db
 
 
 @with_db
-async def create_conversation(
-    patient_id: Optional[int] = None, db: AsyncSession = None
-) -> Conversation:
-    if patient_id:
-        conversation = Conversation(
-            patient_id=patient_id,
-            status=ConversationStatusEnum.ACTIVE.value,
-            started_at=datetime.utcnow(),
-        )
+async def create_conversation(db: AsyncSession = None) -> Conversation:
+    conversation = Conversation(
+        status=ConversationStatusEnum.ACTIVE.value,
+        started_at=datetime.utcnow(),
+    )
 
     db.add(conversation)
     await db.commit()
@@ -158,3 +160,49 @@ async def update_message_content(
     await db.commit()
     await db.refresh(message)
     return message
+
+
+@with_db
+async def process_user_message(
+    conversation_id: int = None,
+    content: str = None,
+    db: AsyncSession = None,
+):
+    """
+    Create conversation/message, send to agent, store response, and return AI reply.
+
+    Args:
+        conversation_id: existing conversation ID (if any)
+        patient_id: patient ID (used if conversation needs creation)
+        content: patient message text
+
+    Returns:
+        conversation_id, ai_message
+    """
+    # If no conversation exists, create one
+    if not conversation_id:
+        conversation = await create_conversation(db=db)
+        conversation_id = conversation.id
+
+    # Store patient's message
+    msg = await create_message(
+        conversation_id=conversation_id,
+        sender_type=SenderTypeEnum.PATIENT,
+        content=content,
+        db=db,
+    )
+
+    # Get AI agent response
+    ai_response = await appointment_agent.handle_user_message(
+        conversation_id=conversation_id, message=msg.content
+    )
+
+    # Store AI response
+    ai_msg = await create_message(
+        conversation_id=conversation_id,
+        sender_type=SenderTypeEnum.AI_AGENT,
+        content=ai_response,
+        db=db,
+    )
+
+    return conversation_id, ai_response
