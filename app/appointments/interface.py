@@ -6,12 +6,12 @@ from sqlalchemy.future import select
 from sqlalchemy import and_
 from dateutil import parser as date_parser
 
-from app.booking.models import Appointment, AppointmentType, AppointmentStatus
+from app.appointments.models import Appointment, AppointmentType, AppointmentStatus
 from app.db.utils import with_db
 
 
-BUSINESS_OPEN_HOUR = 8  # 8:00
-BUSINESS_CLOSE_HOUR = 18  # 18:00 (closing time; appointment must end <= 18:00)
+BUSINESS_OPEN_HOUR = 8  # 08:00
+BUSINESS_CLOSE_HOUR = 18  # 18:00
 
 
 def _is_business_day(dt: datetime) -> bool:
@@ -34,7 +34,6 @@ def _within_business_hours(start: datetime, end: datetime) -> bool:
 def _overlaps(
     a_start: datetime, a_end: datetime, b_start: datetime, b_end: datetime
 ) -> bool:
-    # Two intervals overlap if start < other_end and other_start < end
     return (a_start < b_end) and (b_start < a_end)
 
 
@@ -50,17 +49,25 @@ async def list_appointments_for_patient(
 
 @with_db
 async def list_appointments_between(
-    start_dt: datetime, end_dt: datetime, db: AsyncSession = None
+    start_dt: datetime,
+    end_dt: datetime,
+    target_date: Optional[date] = None,
+    db: AsyncSession = None,
 ) -> List[Appointment]:
-    q = await db.execute(
-        select(Appointment).where(
-            and_(
-                Appointment.start_time >= start_dt,
-                Appointment.start_time < end_dt,
-                Appointment.status == AppointmentStatus.SCHEDULED.value,
-            )
+    """
+    Fetch appointments between start_dt and end_dt. Optionally filter by target_date column.
+    """
+    stmt = select(Appointment).where(
+        and_(
+            Appointment.start_time >= start_dt,
+            Appointment.start_time < end_dt,
+            Appointment.status == AppointmentStatus.SCHEDULED.value,
         )
     )
+    if target_date:
+        stmt = stmt.where(Appointment.target_date == target_date)
+
+    q = await db.execute(stmt)
     return q.scalars().all()
 
 
@@ -71,17 +78,17 @@ async def list_available_slots_for_date(
     db: AsyncSession = None,
 ) -> List[datetime]:
     """
-    Return start datetimes (naive) for available slots on target_date.
+    Return start datetimes for available slots on target_date.
     Considers business hours and existing scheduled appointments.
     """
-    # build start/end bounds for that date
     start_of_day = datetime.combine(target_date, time(BUSINESS_OPEN_HOUR, 0))
     end_of_day = datetime.combine(target_date, time(BUSINESS_CLOSE_HOUR, 0))
 
     # fetch scheduled appointments for that date
-    appointments = await list_appointments_between(start_of_day, end_of_day, db=db)
+    appointments = await list_appointments_between(
+        start_of_day, end_of_day, target_date=target_date, db=db
+    )
 
-    # create candidate slots
     slot_delta = timedelta(minutes=slot_minutes)
     slots = []
     cur = start_of_day
@@ -89,13 +96,10 @@ async def list_available_slots_for_date(
         candidate_start = cur
         candidate_end = cur + slot_delta
 
-        conflict = False
-        for appt in appointments:
-            if _overlaps(
-                candidate_start, candidate_end, appt.start_time, appt.end_time
-            ):
-                conflict = True
-                break
+        conflict = any(
+            _overlaps(candidate_start, candidate_end, appt.start_time, appt.end_time)
+            for appt in appointments
+        )
 
         if not conflict:
             slots.append(candidate_start)
@@ -110,33 +114,33 @@ async def book_appointment(
     patient_id: int,
     appointment_type: str,
     start_time_iso: Optional[str] = None,
+    target_date: Optional[date] = None,
     duration_minutes: int = 30,
     notes: Optional[str] = None,
     db: AsyncSession = None,
 ) -> Appointment:
     """
-    Book an appointment.
-    - start_time_iso: ISO datetime string (local naive). If None and appointment_type == 'emergency',
-      will try to find earliest slot today (within hours), otherwise raises ValueError.
-    - Validates no overlap (for non-emergency except emergency will pick earliest slot).
+    Book an appointment with optional target_date.
     """
-    # parse start_time if provided
     if start_time_iso:
         start_time = date_parser.parse(start_time_iso)
+        if target_date is None:
+            target_date = start_time.date()
     else:
         start_time = None
 
     duration = timedelta(minutes=duration_minutes)
 
-    # Emergency booking: if no start_time provided, find earliest available slot today
+    # Emergency: pick earliest slot today or target_date
     if appointment_type == AppointmentType.EMERGENCY.value:
         if start_time is None:
-            today = datetime.now().date()
+            if target_date is None:
+                target_date = datetime.now().date()
             slots = await list_available_slots_for_date(
-                today, slot_minutes=duration_minutes, db=db
+                target_date, slot_minutes=duration_minutes, db=db
             )
             if not slots:
-                raise ValueError("No available emergency slots today.")
+                raise ValueError(f"No available emergency slots on {target_date}.")
             start_time = slots[0]
 
     if start_time is None:
@@ -144,13 +148,12 @@ async def book_appointment(
 
     end_time = start_time + duration
 
-    # validate business hours
     if not _within_business_hours(start_time, end_time):
         raise ValueError(
             "Appointment must be within business hours Mon-Sat 08:00-18:00."
         )
 
-    # check overlap with existing scheduled appointments
+    # check conflicts
     existing = await db.execute(
         select(Appointment).where(
             and_(
@@ -161,7 +164,6 @@ async def book_appointment(
         )
     )
     if existing.scalars().first():
-        # If emergency, we might allow overriding — but for now we reject
         raise ValueError("Requested time slot is not available due to conflict.")
 
     appt = Appointment(
@@ -169,6 +171,7 @@ async def book_appointment(
         appointment_type=appointment_type,
         start_time=start_time,
         end_time=end_time,
+        target_date=target_date,
         status=AppointmentStatus.SCHEDULED.value,
         notes=notes,
     )
@@ -199,8 +202,7 @@ async def reschedule_appointment(
         raise ValueError("Appointment not found")
 
     new_start = date_parser.parse(new_start_iso)
-    duration = appt.end_time - appt.start_time
-    new_end = new_start + duration
+    new_end = new_start + (appt.end_time - appt.start_time)
 
     if not _within_business_hours(new_start, new_end):
         raise ValueError("New time must be within business hours Mon-Sat 08:00-18:00.")
@@ -221,6 +223,7 @@ async def reschedule_appointment(
 
     appt.start_time = new_start
     appt.end_time = new_end
+    appt.target_date = new_start.date()
     await db.commit()
     await db.refresh(appt)
     return appt

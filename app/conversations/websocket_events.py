@@ -1,6 +1,11 @@
-from app.conversations.interface import create_conversation, create_message
+from app.conversations.interface import (
+    create_conversation,
+    create_message,
+    get_messages,
+)
+from app.conversations.models import SenderTypeEnum
 from app.db.database import AsyncSessionLocal
-
+from app.conversations import appointment_agent
 from app.websocket_app import sio
 
 
@@ -23,16 +28,7 @@ async def start_conversation(sid, data):
     async with AsyncSessionLocal() as db:
         patient_id = data.get("patient_id")  # optional
         conversation = await create_conversation(patient_id=patient_id, db=db)
-        # msg = await create_message(
-        #     sender_type="patient",
-        #         content=data["content"],
-        #         db=db,
-        #     )
 
-        # Put client in that room
-        await sio.enter_room(sid, str(conversation.id), namespace="/conversations")
-
-        # Notify client
         await sio.emit(
             "conversation_started",
             {"conversation_id": str(conversation.id)},
@@ -40,12 +36,32 @@ async def start_conversation(sid, data):
             namespace="/conversations",
         )
 
-        # Echo the message (bot or admin reply placeholder)
+        # Put client in that room
+        await sio.enter_room(sid, str(conversation.id), namespace="/conversations")
+
+        msg = await create_message(
+            conversation_id=conversation.id,
+            sender_type=SenderTypeEnum.PATIENT,
+            content=data["content"],
+            db=db,
+        )
+
+        message = await appointment_agent.handle_user_message(
+            conversation_id=conversation.id, message=msg.content
+        )
+
+        msg = await create_message(
+            conversation_id=conversation.id,
+            sender_type=SenderTypeEnum.AI_AGENT,
+            content=message,
+            db=db,
+        )
+
         await sio.emit(
             "new_message",
             {
                 "conversation_id": str(conversation.id),
-                "content": "Got it! Tell me more.",
+                "content": msg.content,
             },
             room=str(conversation.id),
             namespace="/conversations",
@@ -55,19 +71,34 @@ async def start_conversation(sid, data):
 @sio.event(namespace="/conversations")
 async def send_message(sid, data):
     async with AsyncSessionLocal() as db:
+        conversation_id = data.get("conversation_id")
+        print(dict(data))
         msg = await create_message(
-            sender_type=data["sender_type"],
+            conversation_id=conversation_id,
+            sender_type=SenderTypeEnum.PATIENT.value,
             content=data["content"],
+            db=db,
+        )
+
+        message = await appointment_agent.handle_user_message(
+            conversation_id=conversation_id, message=msg.content
+        )
+
+        msg = await create_message(
+            conversation_id=conversation_id,
+            sender_type=SenderTypeEnum.AI_AGENT,
+            content=message,
             db=db,
         )
 
         await sio.emit(
             "new_message",
             {
-                "conversation_id": str(msg.conversation_id),
-                "content": f"Echo: {msg.content}",
+                "conversation_id": str(conversation_id),
+                "content": message,
             },
-            room=str(msg.conversation_id),
+            room=str(conversation_id),
+            namespace="/conversations",
         )
 
 

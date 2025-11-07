@@ -1,6 +1,7 @@
 # app/booking/models.py
 from sqlalchemy import (
     Column,
+    Date,
     String,
     DateTime,
     ForeignKey,
@@ -31,6 +32,7 @@ class Appointment(BaseModel):
     appointment_type = Column(String(50), nullable=False)
     start_time = Column(DateTime(timezone=False), nullable=False, index=True)
     end_time = Column(DateTime(timezone=False), nullable=False)
+    target_date = Column(Date, nullable=False, index=True)
     status = Column(
         String(50), nullable=False, default=AppointmentStatus.SCHEDULED.value
     )

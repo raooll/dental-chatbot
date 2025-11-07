@@ -54,16 +54,14 @@ async def update_conversation_status(
 
 
 @with_db
-async def assign_agent_to_conversation(
-    conversation_id: str, agent_id: str, db: AsyncSession = None
+async def escalate_conversation_to_admin(
+    conversation_id: str, db: AsyncSession = None
 ) -> Optional[Conversation]:
-    conversation = await get_conversation(conversation_id, db=db)
-    if not conversation:
-        return None
-    conversation.assigned_agent_id = agent_id
-    await db.commit()
-    await db.refresh(conversation)
-    return conversation
+    await update_conversation_status(
+        conversation_id=conversation_id,
+        status=ConversationStatusEnum.ESCALATED.value,
+        db=db,
+    )
 
 
 @with_db
@@ -110,9 +108,7 @@ async def create_message(
         conversation_id=conversation_id,
         sender_type=sender_type,
         content=content,
-        timestamp=datetime.utcnow(),
-        patient_id=patient_id,
-        metadata=metadata,
+        meta=metadata,
     )
     db.add(message)
     await db.commit()
@@ -125,7 +121,7 @@ async def get_messages(conversation_id: str, db: AsyncSession = None) -> List[Me
     result = await db.execute(
         select(Message)
         .where(Message.conversation_id == conversation_id)
-        .order_by(Message.timestamp.asc())
+        .order_by(Message.created_at.asc())
     )
     return result.scalars().all()
 

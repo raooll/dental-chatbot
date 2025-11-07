@@ -96,8 +96,9 @@
       });
 
       socket.on("conversation_started", (data) => {
+        console.log("Conversation started ", data)
         conversationId = data.conversation_id;
-        appendMessage("bot", "Conversation started — go ahead!");
+        // appendMessage("bot", "Conversation started — go ahead!");
       });
 
       socket.on("new_message", (data) => {
@@ -117,6 +118,8 @@
       sendBtn.disabled = true;
 
       if (!socket) setupSocket();
+
+      console.log("Conversation id is ", conversationId)
 
       if (!conversationId) {
         socket.emit("start_conversation", {

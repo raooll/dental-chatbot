@@ -27,7 +27,7 @@ class Conversation(BaseModel):
     escalated_at = Column(DateTime(timezone=True), nullable=True)
     closed_at = Column(DateTime(timezone=True), nullable=True)
 
-    patient = relationship("Patient", backref="conversations")
+    patient = relationship("Patient", backref="conversations", lazy="selectin")
     messages = relationship(
         "Message", back_populates="conversation", cascade="all, delete-orphan"
     )
