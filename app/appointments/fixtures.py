@@ -41,7 +41,9 @@ async def create_appointments(count: int):
 
             appointment = Appointment(
                 patient_id=patient_id,
-                appointment_type=random.choice(["Checkup", "Cleaning", "Filling", "Consultation"]),
+                appointment_type=random.choice(
+                    ["Checkup", "Cleaning", "Filling", "Consultation"]
+                ),
                 start_time=start_time,
                 end_time=end_time,
                 status=AppointmentStatus.SCHEDULED.value

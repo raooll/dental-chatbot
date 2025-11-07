@@ -3,8 +3,20 @@ from fastapi.responses import HTMLResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.middleware.cors import CORSMiddleware
 import pathlib
+from app.websocket_app import socket_app
+
+
+import logging
+logging.getLogger("engineio").setLevel(logging.DEBUG)
+logging.getLogger("socketio").setLevel(logging.DEBUG)
+
+
+import app.conversations
+
 
 app = FastAPI(title="Dental Chatbot")
+
+app.mount("/ws", socket_app)
 
 # Serve static files (chat.html, chat.js)
 static_dir = pathlib.Path(__file__).parent / "app" / "static"

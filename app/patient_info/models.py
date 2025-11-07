@@ -2,6 +2,7 @@
 from sqlalchemy import Column, String, Date
 from app.db.base_model import BaseModel
 
+
 class Patient(BaseModel):
     __tablename__ = "patients"
 

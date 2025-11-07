@@ -10,7 +10,7 @@ from app.booking.models import Appointment, AppointmentType, AppointmentStatus
 from app.db.utils import with_db
 
 
-BUSINESS_OPEN_HOUR = 8   # 8:00
+BUSINESS_OPEN_HOUR = 8  # 8:00
 BUSINESS_CLOSE_HOUR = 18  # 18:00 (closing time; appointment must end <= 18:00)
 
 
@@ -24,22 +24,34 @@ def _within_business_hours(start: datetime, end: datetime) -> bool:
         return False
     open_time = time(BUSINESS_OPEN_HOUR, 0)
     close_time = time(BUSINESS_CLOSE_HOUR, 0)
-    return (start.time() >= open_time) and (end.time() <= close_time) and (start.date() == end.date())
+    return (
+        (start.time() >= open_time)
+        and (end.time() <= close_time)
+        and (start.date() == end.date())
+    )
 
 
-def _overlaps(a_start: datetime, a_end: datetime, b_start: datetime, b_end: datetime) -> bool:
+def _overlaps(
+    a_start: datetime, a_end: datetime, b_start: datetime, b_end: datetime
+) -> bool:
     # Two intervals overlap if start < other_end and other_start < end
     return (a_start < b_end) and (b_start < a_end)
 
 
 @with_db
-async def list_appointments_for_patient(patient_id: int, db: AsyncSession = None) -> List[Appointment]:
-    q = await db.execute(select(Appointment).where(Appointment.patient_id == patient_id))
+async def list_appointments_for_patient(
+    patient_id: int, db: AsyncSession = None
+) -> List[Appointment]:
+    q = await db.execute(
+        select(Appointment).where(Appointment.patient_id == patient_id)
+    )
     return q.scalars().all()
 
 
 @with_db
-async def list_appointments_between(start_dt: datetime, end_dt: datetime, db: AsyncSession = None) -> List[Appointment]:
+async def list_appointments_between(
+    start_dt: datetime, end_dt: datetime, db: AsyncSession = None
+) -> List[Appointment]:
     q = await db.execute(
         select(Appointment).where(
             and_(
@@ -79,7 +91,9 @@ async def list_available_slots_for_date(
 
         conflict = False
         for appt in appointments:
-            if _overlaps(candidate_start, candidate_end, appt.start_time, appt.end_time):
+            if _overlaps(
+                candidate_start, candidate_end, appt.start_time, appt.end_time
+            ):
                 conflict = True
                 break
 
@@ -118,7 +132,9 @@ async def book_appointment(
     if appointment_type == AppointmentType.EMERGENCY.value:
         if start_time is None:
             today = datetime.now().date()
-            slots = await list_available_slots_for_date(today, slot_minutes=duration_minutes, db=db)
+            slots = await list_available_slots_for_date(
+                today, slot_minutes=duration_minutes, db=db
+            )
             if not slots:
                 raise ValueError("No available emergency slots today.")
             start_time = slots[0]
@@ -130,7 +146,9 @@ async def book_appointment(
 
     # validate business hours
     if not _within_business_hours(start_time, end_time):
-        raise ValueError("Appointment must be within business hours Mon-Sat 08:00-18:00.")
+        raise ValueError(
+            "Appointment must be within business hours Mon-Sat 08:00-18:00."
+        )
 
     # check overlap with existing scheduled appointments
     existing = await db.execute(
@@ -172,7 +190,9 @@ async def cancel_appointment(appointment_id: int, db: AsyncSession = None) -> bo
 
 
 @with_db
-async def reschedule_appointment(appointment_id: int, new_start_iso: str, db: AsyncSession = None) -> Appointment:
+async def reschedule_appointment(
+    appointment_id: int, new_start_iso: str, db: AsyncSession = None
+) -> Appointment:
     q = await db.execute(select(Appointment).where(Appointment.id == appointment_id))
     appt = q.scalars().first()
     if not appt:

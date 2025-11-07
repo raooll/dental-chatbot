@@ -1,5 +1,6 @@
 <!DOCTYPE html>
 <html lang="en" data-theme="light">
+
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
@@ -7,11 +8,10 @@
 
   <!-- ✅ Tailwind + DaisyUI -->
   <script src="https://cdn.tailwindcss.com"></script>
-  <link
-    href="https://cdn.jsdelivr.net/npm/daisyui@4.12.10/dist/full.min.css"
-    rel="stylesheet"
-    type="text/css"
-  />
+  <link href="https://cdn.jsdelivr.net/npm/daisyui@4.12.10/dist/full.min.css" rel="stylesheet" type="text/css" />
+
+  <!-- ✅ Socket.IO client -->
+  <script src="https://cdn.socket.io/4.7.5/socket.io.min.js"></script>
 </head>
 
 <body class="bg-base-200 flex flex-col items-center min-h-screen py-10">
@@ -33,18 +33,111 @@
 
       <!-- Input Area -->
       <div class="p-4 bg-base-200 border-t flex items-center gap-2">
-        <input
-          id="message"
-          type="text"
-          placeholder="Type your message..."
-          class="input input-bordered flex-1"
-        />
+        <input id="message" type="text" placeholder="Type your message..." class="input input-bordered flex-1" />
         <button id="sendBtn" class="btn btn-primary" disabled>Send</button>
       </div>
     </div>
   </div>
 
-  <!-- ✅ JS -->
-  <script src="/static/chat.js"></script>
+  <!-- ✅ Chat logic -->
+  <script>
+    const chatbox = document.getElementById("chatbox");
+    const input = document.getElementById("message");
+    const sendBtn = document.getElementById("sendBtn");
+
+    // 🟢 Subtle status indicator
+    const statusBar = document.createElement("div");
+    statusBar.className = "text-sm text-gray-500 text-center mt-2";
+    statusBar.textContent = "Connecting...";
+    document.body.appendChild(statusBar);
+
+    let socket;
+    let conversationId = null;
+
+    // Enable/disable send button based on input
+    input.addEventListener("input", () => {
+      sendBtn.disabled = input.value.trim() === "";
+    });
+
+    sendBtn.addEventListener("click", sendMessage);
+    input.addEventListener("keypress", (e) => {
+      if (e.key === "Enter" && !sendBtn.disabled) sendMessage();
+    });
+
+    function appendMessage(sender, text) {
+      const div = document.createElement("div");
+      div.className = `chat ${sender === "user" ? "chat-end" : "chat-start"}`;
+      div.innerHTML = `
+        <div class="chat-bubble ${sender === "user" ? "chat-bubble-primary" : "chat-bubble-info"
+        }">${text}</div>`;
+      chatbox.appendChild(div);
+      chatbox.scrollTop = chatbox.scrollHeight;
+    }
+
+    function setupSocket() {
+      socket = io("http://127.0.0.1:8000/conversations", {
+        path: "/ws/socket.io/",
+        transports: ["websocket"],
+      });
+
+      socket.on("connect", () => {
+        console.log("✅ Connected:", socket.id);
+        statusBar.textContent = "🟢 Connected";
+      });
+
+      socket.on("disconnect", () => {
+        console.log("❌ Disconnected");
+        statusBar.textContent = "🔴 Disconnected";
+      });
+
+      socket.on("connect_error", (err) => {
+        console.error("Connection error:", err);
+        statusBar.textContent = "⚠️ Connection error";
+      });
+
+      socket.on("conversation_started", (data) => {
+        conversationId = data.conversation_id;
+        appendMessage("bot", "Conversation started — go ahead!");
+      });
+
+      socket.on("new_message", (data) => {
+        appendMessage("bot", data.content);
+      });
+    }
+
+    // 🚀 connect immediately on page load
+    setupSocket();
+
+    function sendMessage() {
+      const message = input.value.trim();
+      if (!message) return;
+
+      appendMessage("user", message);
+      input.value = "";
+      sendBtn.disabled = true;
+
+      if (!socket) setupSocket();
+
+      if (!conversationId) {
+        socket.emit("start_conversation", {
+          patient_id: 1,
+          content: message,
+        });
+      } else {
+        socket.emit("send_message", {
+          conversation_id: conversationId,
+          sender_type: "patient",
+          content: message,
+        });
+      }
+
+      sendBtn.disabled = false;
+    }
+
+    // 🚀 Initialize connection immediately when page loads
+    window.addEventListener("DOMContentLoaded", setupSocket);
+  </script>
+
 </body>
+
 </html>

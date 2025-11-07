@@ -31,11 +31,15 @@ class Appointment(BaseModel):
     appointment_type = Column(String(50), nullable=False)
     start_time = Column(DateTime(timezone=False), nullable=False, index=True)
     end_time = Column(DateTime(timezone=False), nullable=False)
-    status = Column(String(50), nullable=False, default=AppointmentStatus.SCHEDULED.value)
+    status = Column(
+        String(50), nullable=False, default=AppointmentStatus.SCHEDULED.value
+    )
     notes = Column(Text, nullable=True)
 
     created_at = Column(DateTime(timezone=False), server_default=func.now())
-    updated_at = Column(DateTime(timezone=False), server_default=func.now(), onupdate=func.now())
+    updated_at = Column(
+        DateTime(timezone=False), server_default=func.now(), onupdate=func.now()
+    )
 
     # optional relationship to Patient (read-only here)
     patient = relationship("Patient", backref="appointments", lazy="joined")

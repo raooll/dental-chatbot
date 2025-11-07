@@ -34,7 +34,9 @@ async def get_patient_by_id(patient_id: int, db: AsyncSession = None):
 
 @with_db
 async def get_patient_by_phone(phone_number: str, db: AsyncSession = None):
-    result = await db.execute(select(Patient).where(Patient.phone_number == phone_number))
+    result = await db.execute(
+        select(Patient).where(Patient.phone_number == phone_number)
+    )
     return result.scalars().first()
 
 
