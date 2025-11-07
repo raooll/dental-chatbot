@@ -57,7 +57,7 @@ You can populate the database with fake test data using the included fixtures.
 
 📅 Create fake appointments
 
-uv run python -m app.appointment.fixtures --count 25
+uv run python -m app.appointments.fixtures --count 25
 
 5️⃣ Run the FastAPI server
 

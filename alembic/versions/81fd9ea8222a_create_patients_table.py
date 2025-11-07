@@ -21,11 +21,13 @@ def upgrade() -> None:
     """Upgrade schema — create the patients table."""
     op.create_table(
         'patients',
-        sa.Column('id', sa.Integer, primary_key=True, index=True),
+        sa.Column("id", sa.String(length=12), primary_key=True),
         sa.Column('full_name', sa.String(length=255), nullable=False),
         sa.Column('phone_number', sa.String(length=20), nullable=False, unique=True),
         sa.Column('date_of_birth', sa.Date, nullable=False),
         sa.Column('insurance_name', sa.String(length=255), nullable=True),
+        sa.Column('created_at', sa.DateTime(timezone=False), server_default=sa.func.now(), nullable=False),
+        sa.Column('updated_at', sa.DateTime(timezone=False), server_default=sa.func.now(), onupdate=sa.func.now(), nullable=False),
     )
     op.create_index(op.f('ix_patients_phone_number'), 'patients', ['phone_number'], unique=True)
 

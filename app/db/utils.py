@@ -1,7 +1,7 @@
 # app/db/utils.py
 import inspect
 from functools import wraps
-from app.db.database import get_db, AsyncSession
+from app.db.database import get_db
 
 def with_db(func):
     """Decorator to automatically inject a DB session if not provided."""

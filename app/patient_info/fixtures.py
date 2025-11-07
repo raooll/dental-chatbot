@@ -1,5 +1,4 @@
 import asyncio
-from datetime import date
 from random import randint
 from faker import Faker
 from sqlalchemy.ext.asyncio import AsyncSession

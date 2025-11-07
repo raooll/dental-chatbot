@@ -22,8 +22,8 @@ def upgrade() -> None:
     """Upgrade schema."""
     op.create_table(
         'appointments',
-        sa.Column('id', sa.Integer(), primary_key=True, index=True),
-        sa.Column('patient_id', sa.Integer(), sa.ForeignKey('patients.id', ondelete='CASCADE'), nullable=False, index=True),
+        sa.Column("id", sa.String(length=12), primary_key=True),
+        sa.Column('patient_id', sa.String(length=12), sa.ForeignKey('patients.id', ondelete='CASCADE'), nullable=False, index=True),
         sa.Column('appointment_type', sa.String(length=50), nullable=False),
         sa.Column('start_time', sa.DateTime(timezone=False), nullable=False, index=True),
         sa.Column('end_time', sa.DateTime(timezone=False), nullable=False),
