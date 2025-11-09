@@ -103,8 +103,6 @@ async def find_patient(
         await db.commit()
         await db.refresh(conversation)
 
-        ctx.deps.patient = patient
-
         return f"Patient found: {patient.full_name}, DOB: {patient.date_of_birth}, Insurance: {patient.insurance_name}."
     else:
         return "No existing patient found with that phone number."
@@ -121,6 +119,7 @@ async def register_patient(
     """Register a new patient in the database."""
     print("Running register_patient")
     db = ctx.deps.db
+    active_conversation = await db.get(Conversation, ctx.deps.conversation_id)
     new_patient = await add_patient(
         db=db,
         full_name=full_name,
@@ -128,7 +127,11 @@ async def register_patient(
         date_of_birth=dob,
         insurance_name=insurance_name,
     )
-    ctx.deps.patient = new_patient
+
+    active_conversation.patient_id = new_patient.id
+    await db.commit()
+    await db.refresh(active_conversation)
+
     return f"New patient {full_name} registered successfully."
 
 

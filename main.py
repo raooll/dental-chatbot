@@ -7,6 +7,7 @@ from app.websocket_app import socket_app
 
 
 import logging
+
 logging.getLogger("engineio").setLevel(logging.DEBUG)
 logging.getLogger("socketio").setLevel(logging.DEBUG)
 
@@ -31,15 +32,17 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+
 @app.get("/", response_class=HTMLResponse)
 async def home():
-    html_file = static_dir  / "chat.html"
+    html_file = static_dir / "chat.html"
     return HTMLResponse(content=html_file.read_text(), status_code=200)
+
 
 @app.post("/chat")
 async def chat(request: Request):
     data = await request.json()
     message = data.get("message", "")
-    
+
     # For now, simple echo logic
     return JSONResponse({"message": f"You said: {message}"})
